@@ -1,0 +1,1 @@
+cmd_/home/cvspub/gap16g/drv/nac.o := ld -m elf_i386 -m elf_i386  -r -o /home/cvspub/gap16g/drv/nac.o /home/cvspub/gap16g/drv/nac_main.o /home/cvspub/gap16g/drv/nacts.o /home/cvspub/gap16g/drv/nacpci.o

@@ -531,8 +531,8 @@ void* anReport(void * unUsed)
         for (i=0; i<NUM_STREAM; i++)
         {
 
-          //  printf("Stream %d: %f Mbps, %f Mpps, total: %d \n",i,(double)(8*(totalBytes[i] - bytesCnt[i]))/(double)timeuse,
-          //         (double)(totalPackets[i]-packetCnt[i])/(double)timeuse,totalPackets[i]-packetCnt[i]);
+            printf("Stream %d: %f Mbps, %f Mpps, total: %d \n",i,(double)(8*(totalBytes[i] - bytesCnt[i]))/(double)timeuse,
+                   (double)(totalPackets[i]-packetCnt[i])/(double)timeuse,totalPackets[i]-packetCnt[i]);
 
             //	printf("total : 0x%x\n",totalBytes[i]);
         }

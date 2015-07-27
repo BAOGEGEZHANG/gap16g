@@ -230,7 +230,7 @@ FIND:
             verify_seqnum = 1;
             memcpy (file->name, list[loop].pos + 16, 16);
             memcpy (file->md5, list[loop].pos + 32, 16);
-            printf ("run_rx:file.name:%s\n",file->name);
+            printf ("find_next:seqnum:%d write frist packet into file\n",verify_seqnum);
             sprintf (tmp_filename, "/dev/shm/%s",file->name);
             if ((file->fp = fopen( tmp_filename, "wb")) == NULL)
             {
@@ -254,7 +254,7 @@ FIND:
             list[loop].seqnum = 0;
             free(list[loop].pos);
             list[loop].pos = NULL;
-            printf ("run_rx:seqnum:%d file get the last packet \n",verify_seqnum);
+            printf ("find_next:seqnum:%d write last packet into file\n",verify_seqnum);
             fclose(file->fp);
             MD5_Final(md5_result,&c);
             print_md5(md5_result);
@@ -264,6 +264,7 @@ FIND:
         }
         else
         {
+            printf ("find_next:seqnum:%d write file\n",verify_seqnum);
             fwrite ( list[loop].pos + 48, tmp_wlen - 32, 1, file->fp);
             MD5_Update(&c, list[loop].pos + 48, tmp_wlen-32);
 
@@ -388,7 +389,7 @@ static void *run_rx(an_arg_t* arg)
                     memcpy (file.name, (char *)bottom + 16, 16);
                     memcpy (file.md5, (char *)bottom + 32, 16);
 
-                    printf ("run_rx:seqnum:%d file.name:%s\n",seqnum,file.name);
+                    printf ("run_rx:seqnum:%d frist packet\n",seqnum);
                     sprintf (tmp_filename, "/dev/shm/%s",file.name);
                     if ((file.fp = fopen( tmp_filename, "wb")) == NULL)
                     {
@@ -403,6 +404,7 @@ static void *run_rx(an_arg_t* arg)
                 }
                 else if (wlen != rlen - 16) /*last packet of file*/
                 {
+										printf ("run_rx:seqnum:%d last packet\n",seqnum);
                     fwrite ( bottom + 48, wlen - 32, 1, file.fp);
                     MD5_Update(&c, bottom + 48, wlen-32);
                     fclose(file.fp);
@@ -415,6 +417,7 @@ static void *run_rx(an_arg_t* arg)
                 }
                 else
                 {
+						//				printf ("run_rx:seqnum:%d is comming\n",seqnum);
                     fwrite ( bottom + 48, wlen - 32, 1, file.fp);
                     MD5_Update(&c, bottom + 48, wlen-32);
                     verify_seq++;
@@ -440,6 +443,7 @@ static void *run_rx(an_arg_t* arg)
                 }
                 else
                 {
+										printf ("run_rx:add new node seqnum:%d into list\n",seqnum);
                     list[loop].seqnum = seqnum;
                     list[loop].pos = malloc (1600);
                     if ( list[loop].pos == NULL)

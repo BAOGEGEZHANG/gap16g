@@ -386,8 +386,6 @@ static void *run_rx(an_arg_t *arg)
 	err = 0;
 	uint32_t seqnum;
 	uint8_t tmp_filename[24];
-	uint8_t *buffer_content;
-	memset(buffer_block, 0x00, 1600 * 10);
 	init_listspace();
 
 	// get data

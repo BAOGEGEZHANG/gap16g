@@ -121,6 +121,7 @@ failed:
 	{
 		free(list[loop].pos);
 		list[loop].pos = NULL;
+		loop--;
 	}
 
 	exit(-1);
@@ -387,8 +388,7 @@ static void *run_rx(an_arg_t *arg)
 	uint8_t tmp_filename[24];
 	uint8_t *buffer_content;
 	memset(buffer_block, 0x00, 1600 * 10);
-
-    init_listspace();
+	init_listspace();
 
 	// get data
 	while (!shutdownInProgress)
@@ -469,17 +469,14 @@ static void *run_rx(an_arg_t *arg)
 				else
 				{
 					list[loop].seqnum = seqnum;
-			    //list[loop].pos = malloc(1600);
-
-				//	if (list[loop].pos == NULL)
-				//	{
-				//		printf("run_rx:malloc new node error");
-				//		return NULL;
-				//	}
-
+					//list[loop].pos = malloc(1600);
+					//	if (list[loop].pos == NULL)
+					//	{
+					//		printf("run_rx:malloc new node error");
+					//		return NULL;
+					//	}
 					memcpy(list[loop].pos , bottom , 1600);
 				}
-
 			}
 
 NEXT:

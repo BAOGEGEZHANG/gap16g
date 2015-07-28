@@ -191,6 +191,7 @@ void shutdown_flow(void)
 
 	nac_close(nacfd);
 	nacfd = -1;
+  clean_listspace();
 	return;
 }
 

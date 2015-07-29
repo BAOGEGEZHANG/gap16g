@@ -31,6 +31,8 @@ MD5_CTX c;
 uint8_t md5[16];
 uint8_t md5_result[16];
 
+uint8_t log_name[64];
+
 
 typedef struct an_arg
 {
@@ -191,7 +193,7 @@ void shutdown_flow(void)
 
 	nac_close(nacfd);
 	nacfd = -1;
-  clean_listspace();
+	clean_listspace();
 	return;
 }
 
@@ -289,8 +291,6 @@ FIND:
 			fwrite(list[loop].pos + 48, 1600 - 48, 1, file->fp);
 			MD5_Update(&c, list[loop].pos + 48, 1600 - 48);
 			list[loop].seqnum = 0;
-			//free(list[loop].pos);
-			//list[loop].pos = NULL;
 			verify_seqnum++;
 		}
 		else if (tmp_wlen != tmp_rlen - 16)
@@ -298,8 +298,6 @@ FIND:
 			fwrite(list[loop].pos + 48, tmp_wlen - 32, 1, file->fp);
 			MD5_Update(&c, list[loop].pos + 48, tmp_wlen - 32);
 			list[loop].seqnum = 0;
-			//free(list[loop].pos);
-			//list[loop].pos = NULL;
 			printf("run_rx:seqnum:%d file get the last packet \n", verify_seqnum);
 			fclose(file->fp);
 			MD5_Final(md5_result, &c);
@@ -312,8 +310,6 @@ FIND:
 			fwrite(list[loop].pos + 48, tmp_wlen - 32, 1, file->fp);
 			MD5_Update(&c, list[loop].pos + 48, tmp_wlen - 32);
 			list[loop].seqnum = 0;
-			//free(list[loop].pos);
-			//list[loop].pos = NULL;
 			verify_seqnum++;
 		}
 
@@ -468,12 +464,6 @@ static void *run_rx(an_arg_t *arg)
 				else
 				{
 					list[loop].seqnum = seqnum;
-					//list[loop].pos = malloc(1600);
-					//	if (list[loop].pos == NULL)
-					//	{
-					//		printf("run_rx:malloc new node error");
-					//		return NULL;
-					//	}
 					memcpy(list[loop].pos , bottom , 1600);
 				}
 			}
@@ -689,6 +679,21 @@ void *anReport(void *unUsed)
 	memset(&port2_cnt, 0, sizeof(statistics_cnt_t));
 	memset(&port3_cnt, 0, sizeof(statistics_cnt_t));
 	gettimeofday(&start, NULL);
+
+  t = time(NULL);
+	strftime(log_name, sizeof(log_name), "%F:%T", localtime(&t));
+
+  FILE *log_file ;
+  log_file = fopen(log_name, "wb");
+  if (NULL == log_file)
+  {
+    printf ("[%s]:fopen %s failed\n",__func__, log_name);
+    return NULL;
+  }
+
+  uint8_t tmp_buffer_log[128];
+  memset(tmp_buffer_log, 0x00, sizeof(tmp_buffer_log));
+  
 	printf("************************************************\n");
 
 	while (!shutdownInProgress)
@@ -702,18 +707,20 @@ void *anReport(void *unUsed)
 
 		for (i = 0; i < NUM_STREAM; i++)
 		{
-#if 1
 			printf("Stream %d: %f Mbps, %f Mpps, total: %d \n", i, (double)(8 * (totalBytes[i] - bytesCnt[i])) / (double)timeuse,
 			       (double)(totalPackets[i] - packetCnt[i]) / (double)timeuse, totalPackets[i] - packetCnt[i]);
-#endif
+      sprintf (tmp_buffer_log, "[%s]:%f Mbps, %f Mpps, totalBytes:%llu, totalPackets:%llu \n",tmp, (double)(8 * (totalBytes[i] - bytesCnt[i])) / (double)timeuse,
+              (double)(totalPackets[i] - packetCnt[i]) / (double)timeuse,  totalBytes[i], totalPackets[i]);
 		}
-
+    fputs(tmp_buffer_log, log_file);
+    
 		memcpy(&start, &end, sizeof(struct timeval));
 		memcpy(bytesCnt, totalBytes, sizeof(uint64_t) * NUM_STREAM);
 		memcpy(packetCnt, totalPackets, sizeof(uint64_t) * NUM_STREAM);
 		printf("************************************************\n");
 	}
 
+  fclose (log_file);
 	report_stop = 1;
 	return(NULL);
 }

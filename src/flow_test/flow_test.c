@@ -27,6 +27,10 @@ int refresh_num = 0;
 unsigned char report_stop;
 unsigned char an_stop[NUM_STREAM];
 
+time_t pro_start, pro_end;
+uint64_t rx_right_cnt ;
+uint64_t rx_err_cnt;
+
 MD5_CTX c;
 uint8_t md5[16];
 uint8_t md5_result[16];
@@ -62,7 +66,6 @@ typedef struct node
 
 uint64_t block_seqnum[10];
 node_t list[10];
-int flag_fp_status = 1;
 
 an_arg_t anThreadArg[NUM_STREAM];
 pthread_t anRxThread[NUM_STREAM];
@@ -94,6 +97,7 @@ int compare_md5(char *old, char *new)
 			print_md5(old);
 			printf("new: ");
 			print_md5(new);
+			rx_err_cnt++;
 			return 1;
 		}
 
@@ -232,19 +236,7 @@ void print_buf(unsigned char *s, unsigned int len)
 	printf("\n");
 }
 
-static int Is_lastpacket(char *bottom)
-{
-	erf_record_t *tmp_erfhdr;
-	uint16_t tmp_rlen, tmp_wlen;
-	tmp_erfhdr      = (erf_record_t *)bottom;
-	tmp_rlen        = ntohs(tmp_erfhdr->rlen);
-	tmp_wlen        = ntohs(tmp_erfhdr->wlen);
 
-	if (tmp_wlen == tmp_rlen - 16)
-		{ return 1; }
-
-	return 0;
-}
 
 static int find_nextpacketinlist(unsigned int *verify, node_t *list, file_header_t *file)
 {
@@ -304,6 +296,7 @@ FIND:
 			print_md5(md5_result);
 			compare_md5(file->md5, md5_result);
 			verify_seqnum = 1;
+      rx_right_cnt ++;
 		}
 		else
 		{
@@ -434,6 +427,7 @@ static void *run_rx(an_arg_t *arg)
 					print_md5(md5_result);
 					compare_md5(file.md5, md5_result);
 					verify_seq = 1;
+          rx_right_cnt ++;
 				}
 				else
 				{
@@ -475,7 +469,17 @@ NEXT:
 
 PEND:
 	an_stop[stream_num] = 1;
-	int loop;
+
+  pro_end = time(NULL);
+  /****************************************************************************/
+  printf ("*****************************************************************\n");
+  printf ("*\tTranslate file.name:%s\n", file.name);
+  printf ("*\tTranslate Use_Time:%llu Min\n", (pro_end - pro_start) / 60);
+  printf ("*\trx_file OK count:%llu\n", rx_right_cnt);
+  printf ("*\trx_file ERROR count:%llu\n", rx_err_cnt);
+  printf ("*\tTranslate aver-BandWith:%f Mbps\n",(double)( 8 *totalBytes[0] / 1000000)/(double)(pro_end - pro_start));
+  printf ("*\tTranslate totalBytes:%llu totalPackets:%llu\n", totalBytes[0], totalPackets[0]);
+  printf ("*****************************************************************\n");
 
 	if (file.size != totalBytes[0])
 	{
@@ -484,15 +488,9 @@ PEND:
 		return NULL;
 	}
 
-	printf("++++++++++++++Translate the file OK++++++++++++++\n");
-	totalBytes[0] = 0;
-	totalPackets[0] = 0;
 	//			goto NEXT;
 	return(NULL);
 }
-
-
-
 
 
 
@@ -709,11 +707,7 @@ void *anReport(void *unUsed)
 		{
 			printf("Stream %d: %f Mbps, %f Mpps, total: %d \n", i, (double)(8 * (totalBytes[i] - bytesCnt[i])) / (double)timeuse,
 			       (double)(totalPackets[i] - packetCnt[i]) / (double)timeuse, totalPackets[i] - packetCnt[i]);
-		}
-
-		if (!(count % 5))
-		{
-      memset(tmp_buffer_log, 0x00, sizeof(tmp_buffer_log));
+			memset(tmp_buffer_log, 0x00, sizeof(tmp_buffer_log));
 			sprintf(tmp_buffer_log, "[%s],%f Mbps, %f Mpps, totalBytes:%llu, totalPackets:%llu \n", tmp, (double)(8 * (totalBytes[i] - bytesCnt[i])) / (double)timeuse,
 			        (double)(totalPackets[i] - packetCnt[i]) / (double)timeuse,  totalBytes[i], totalPackets[i]);
 			fputs(tmp_buffer_log, log_file);
@@ -783,6 +777,8 @@ int main(int argc, char *argv[])
 	// init counters
 	memset(totalBytes, 0, sizeof(uint64_t)*NUM_STREAM);
 	memset(totalPackets, 0, sizeof(uint64_t)*NUM_STREAM);
+
+  pro_start = time(NULL);
 
 	// Use API, open nac card
 	if ((nacfd = nac_open(nacname)) < 0)

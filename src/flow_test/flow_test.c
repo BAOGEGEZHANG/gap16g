@@ -679,21 +679,21 @@ void *anReport(void *unUsed)
 	memset(&port2_cnt, 0, sizeof(statistics_cnt_t));
 	memset(&port3_cnt, 0, sizeof(statistics_cnt_t));
 	gettimeofday(&start, NULL);
-
-  t = time(NULL);
+	t = time(NULL);
 	strftime(log_name, sizeof(log_name), "%F:%T", localtime(&t));
+	strcat(log_name, ".csv");
+	FILE *log_file ;
+	log_file = fopen(log_name, "wb");
 
-  FILE *log_file ;
-  log_file = fopen(log_name, "wb");
-  if (NULL == log_file)
-  {
-    printf ("[%s]:fopen %s failed\n",__func__, log_name);
-    return NULL;
-  }
+	if (NULL == log_file)
+	{
+		printf("[%s]:fopen %s failed\n", __func__, log_name);
+		return NULL;
+	}
 
-  uint8_t tmp_buffer_log[128];
-  memset(tmp_buffer_log, 0x00, sizeof(tmp_buffer_log));
-  
+	uint8_t tmp_buffer_log[128];
+	memset(tmp_buffer_log, 0x00, sizeof(tmp_buffer_log));
+	uint64_t count = 0;
 	printf("************************************************\n");
 
 	while (!shutdownInProgress)
@@ -709,18 +709,24 @@ void *anReport(void *unUsed)
 		{
 			printf("Stream %d: %f Mbps, %f Mpps, total: %d \n", i, (double)(8 * (totalBytes[i] - bytesCnt[i])) / (double)timeuse,
 			       (double)(totalPackets[i] - packetCnt[i]) / (double)timeuse, totalPackets[i] - packetCnt[i]);
-      sprintf (tmp_buffer_log, "[%s]:%f Mbps, %f Mpps, totalBytes:%llu, totalPackets:%llu \n",tmp, (double)(8 * (totalBytes[i] - bytesCnt[i])) / (double)timeuse,
-              (double)(totalPackets[i] - packetCnt[i]) / (double)timeuse,  totalBytes[i], totalPackets[i]);
 		}
-    fputs(tmp_buffer_log, log_file);
-    
+
+		if (!(count % 5))
+		{
+      memset(tmp_buffer_log, 0x00, sizeof(tmp_buffer_log));
+			sprintf(tmp_buffer_log, "[%s],%f Mbps, %f Mpps, totalBytes:%llu, totalPackets:%llu \n", tmp, (double)(8 * (totalBytes[i] - bytesCnt[i])) / (double)timeuse,
+			        (double)(totalPackets[i] - packetCnt[i]) / (double)timeuse,  totalBytes[i], totalPackets[i]);
+			fputs(tmp_buffer_log, log_file);
+		}
+
 		memcpy(&start, &end, sizeof(struct timeval));
 		memcpy(bytesCnt, totalBytes, sizeof(uint64_t) * NUM_STREAM);
 		memcpy(packetCnt, totalPackets, sizeof(uint64_t) * NUM_STREAM);
 		printf("************************************************\n");
+		count++;
 	}
 
-  fclose (log_file);
+	fclose(log_file);
 	report_stop = 1;
 	return(NULL);
 }

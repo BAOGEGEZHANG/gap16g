@@ -6,10 +6,20 @@
  *********************************/
 
 #include "flow_test.h"
+
+
+//#define WRITEFILE 
+//#define MD5_CAL
+
+#ifdef DEBUG
+	#define DEBUG_INFO(MSG)   printf MSG
+#else 
+	#define DEBUG_INFO
+#endif
+
+#ifdef MD5_CAL
 #include <openssl/md5.h>
-
-
-#define WRITEFILE 1
+#endif
 
 //#define CONFIG_TX  1
 
@@ -31,9 +41,12 @@ time_t pro_start, pro_end;
 uint64_t rx_right_cnt ;
 uint64_t rx_err_cnt;
 
+#ifdef MD5_CAL
 MD5_CTX c;
+#endif
 uint8_t md5[16];
 uint8_t md5_result[16];
+
 
 uint8_t log_name[64];
 
@@ -78,12 +91,12 @@ pthread_t reportThread;
 void print_md5(char *buf)
 {
 	int i;
-	printf("MD5: ");
+	DEBUG_INFO(("MD5: "));
 
 	for (i = 0; i < 16; i++)
-		{ printf("%02x", (unsigned char)buf[i]); }
+		{ DEBUG_INFO(("%02x", (unsigned char)buf[i])); }
 
-	printf("\n");
+	DEBUG_INFO(("\n"));
 }
 
 int compare_md5(char *old, char *new)
@@ -93,9 +106,9 @@ int compare_md5(char *old, char *new)
 	for (i = 0; i < 16; i++)
 		if (old[i] != new[i])
 		{
-			printf("Error, md5 not correct!\n old:");
+			DEBUG_INFO(("Error, md5 not correct!\n old:"));
 			print_md5(old);
-			printf("new: ");
+			DEBUG_INFO(("new: "));
 			print_md5(new);
 			rx_err_cnt++;
 			return 1;
@@ -267,11 +280,13 @@ FIND:
 
 		if (1 == verify_seqnum)
 		{
+#ifdef MD5_CAL
 			MD5_Init(&c);
+#endif
 			verify_seqnum = 1;
 			memcpy(file->name, list[loop].pos + 16, 16);
 			memcpy(file->md5, list[loop].pos + 32, 16);
-			printf("run_rx:file.name:%s\n", file->name);
+			DEBUG_INFO(("[%s]:file.name:%s\n",__func__, file->name));
 			sprintf(tmp_filename, "/dev/shm/%s", file->name);
 
 			if ((file->fp = fopen(tmp_filename, "wb")) == NULL)
@@ -279,29 +294,43 @@ FIND:
 				printf("fail to open file %s\n", tmp_filename);
 				exit(-2);
 			}
-
+#ifdef WRITEFILE
 			fwrite(list[loop].pos + 48, 1600 - 48, 1, file->fp);
+#endif
+#ifdef MD5_CAL
 			MD5_Update(&c, list[loop].pos + 48, 1600 - 48);
+#endif
 			list[loop].seqnum = 0;
 			verify_seqnum++;
 		}
 		else if (tmp_wlen != tmp_rlen - 16)
 		{
+#ifdef WRITEFILE
 			fwrite(list[loop].pos + 48, tmp_wlen - 32, 1, file->fp);
+#endif
+#ifdef MD5_CAL
 			MD5_Update(&c, list[loop].pos + 48, tmp_wlen - 32);
+#endif
 			list[loop].seqnum = 0;
-			printf("run_rx:seqnum:%d file get the last packet \n", verify_seqnum);
+			DEBUG_INFO(("{%s]:seqnum:%d file get the last packet \n", __func__,verify_seqnum));
 			fclose(file->fp);
+#ifdef MD5_CAL
 			MD5_Final(md5_result, &c);
 			print_md5(md5_result);
 			compare_md5(file->md5, md5_result);
+#endif
 			verify_seqnum = 1;
       rx_right_cnt ++;
 		}
 		else
 		{
+			DEBUG_INFO (("[%s]:write seqnum:%d into file\n", __func__, verify_seqnum));
+#ifdef WRITEFILE
 			fwrite(list[loop].pos + 48, tmp_wlen - 32, 1, file->fp);
+#endif
+#ifdef MD5_CAL
 			MD5_Update(&c, list[loop].pos + 48, tmp_wlen - 32);
+#endif
 			list[loop].seqnum = 0;
 			verify_seqnum++;
 		}
@@ -402,10 +431,12 @@ static void *run_rx(an_arg_t *arg)
 			{
 				if (1 == seqnum)	/*first packet of file*/
 				{
+#ifdef MD5_CAL
 					MD5_Init(&c);
+#endif
 					memcpy(file.name, (char *)bottom + 16, 16);
 					memcpy(file.md5, (char *)bottom + 32, 16);
-					printf("run_rx:seqnum:%d file.name:%s\n", seqnum, file.name);
+					DEBUG_INFO(("run_rx:seqnum:%d file.name:%s\n", seqnum, file.name));
 					sprintf(tmp_filename, "/dev/shm/%s", file.name);
 
 					if ((file.fp = fopen(tmp_filename, "wb")) == NULL)
@@ -413,26 +444,39 @@ static void *run_rx(an_arg_t *arg)
 						printf("fail to open file %s\n", tmp_filename);
 						exit(-2);
 					}
-
+#ifdef WRITEFILE
 					fwrite(bottom + 48, wlen - 32, 1, file.fp);
+#endif
+#ifdef MD5_CAL
 					MD5_Update(&c, bottom + 48, wlen - 32);
+#endif
 					verify_seq++;
 				}
 				else if (wlen != rlen - 16) /*last packet of file*/
 				{
+#ifdef WRITEFILE
 					fwrite(bottom + 48, wlen - 32, 1, file.fp);
+#endif
+#ifdef MD5_CAL
 					MD5_Update(&c, bottom + 48, wlen - 32);
+#endif
 					fclose(file.fp);
+#ifdef MD5_CAL
 					MD5_Final(md5_result, &c);
 					print_md5(md5_result);
 					compare_md5(file.md5, md5_result);
+#endif
 					verify_seq = 1;
           rx_right_cnt ++;
 				}
 				else
 				{
+#ifdef WRITEFILE
 					fwrite(bottom + 48, wlen - 32, 1, file.fp);
+#endif
+#ifdef MD5_CAL
 					MD5_Update(&c, bottom + 48, wlen - 32);
+#endif
 					verify_seq++;
 				}
 
@@ -458,6 +502,7 @@ static void *run_rx(an_arg_t *arg)
 				else
 				{
 					list[loop].seqnum = seqnum;
+					DEBUG_INFO (("run_rx:bad seqnum:%d ,verify_num:%d\n",seqnum, verify_seq));
 					memcpy(list[loop].pos , bottom , 1600);
 				}
 			}
@@ -512,7 +557,9 @@ static void *run_tx(an_arg_t *arg)
 	printf("start tx %d\n", stream_num);
 	uint64_t len;
 	uint8_t md5[16];
+#ifdef MD5_CAL
 	MD5_CTX c;
+#endif
 	file.fp = fopen(file.name, "rb");
 	printf("run_tx:file.fp open\n");
 
@@ -532,21 +579,25 @@ static void *run_tx(an_arg_t *arg)
 
 	memset(send_buf, 0, file.size);
 	printf("run_tx:malloc send_buff\n");
+#ifdef MD5_CAL
 	MD5_Init(&c);
+#endif
 	printf("run_tx:MD5 init\n");
 
 	while (0 != (len = fread(send_buf, 1, file.size, file.fp)))
 	{
 		printf("run_tx:md5 update is running\n");
+#ifdef MD5_CAL
 		MD5_Update(&c, send_buf, len);
+#endif
 	}
 
 	printf("run_tx:md5 update is ok\n");
+#ifdef MD5_CAL
 	MD5_Final(file.md5, &c);
+#endif
 	printf("run_tx: md5 final\n");
 	fclose(file.fp);
-	print_md5(file.md5);
-	printf("run_tx:Get file into buffer\n");
 	file.chip = 1600 - 48;
 	file.tx_count = (file.size / file.chip) + 1;
 	printf("run_tx:file.size:%d file.chip:%d file.tx_count:%d\n", file.size, file.chip, file.tx_count);
@@ -596,7 +647,9 @@ static void *run_tx(an_arg_t *arg)
 			memset(buffer_packet, 0, pkt_header.rlen);
 			memcpy(buffer_packet + 16, file.name, 16);
 			//print_buf(buffer_packet, 1600);
+#ifdef MD5_CAL
 			memcpy(buffer_packet + 16 + 16, file.md5, sizeof(file.md5));
+#endif
 			//print_buf(buffer_packet, 1600);
 
 			if (seqnum < file.tx_count)

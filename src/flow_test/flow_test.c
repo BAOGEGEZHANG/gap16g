@@ -8,47 +8,47 @@
 #include "flow_test.h"
 
 
-//#define WRITEFILE 
+//#define WRITEFILE
 //#define MD5_CAL
-
+//#define DEBUG
+//#define BIGFILE
 #ifdef DEBUG
-	#define DEBUG_INFO(MSG)   printf MSG
-#else 
-	#define DEBUG_INFO
+#define DEBUG_INFO(MSG)   printf MSG
+#else
+#define DEBUG_INFO
 #endif
 
 #ifdef MD5_CAL
 #include <openssl/md5.h>
 #endif
 
-//#define CONFIG_TX  1
 
 
-//#define DEBUG
 #define Kbps    1000
 #define Mbps    1000000
+
 static char nacname[20] = "/dev/";
 int nacfd = -1;
 char shutdownInProgress = 0;
-static uint64_t totalBytes[NUM_STREAM];
-static uint64_t totalPackets[NUM_STREAM];
 
 int refresh_num = 0;
 unsigned char report_stop;
 unsigned char an_stop[NUM_STREAM];
 
+//global statistic info var
 time_t pro_start, pro_end;
 uint64_t rx_right_cnt ;
 uint64_t rx_err_cnt;
+static uint64_t totalBytes[NUM_STREAM];
+static uint64_t totalPackets[NUM_STREAM];
 
+//MD5 CAL
 #ifdef MD5_CAL
 MD5_CTX c;
 #endif
 uint8_t md5[16];
 uint8_t md5_result[16];
 
-
-uint8_t log_name[64];
 
 
 typedef struct an_arg
@@ -114,7 +114,7 @@ int compare_md5(char *old, char *new)
 			return 1;
 		}
 
-	printf("md5sum is OK\n");
+//	printf("md5sum is OK\n");
 	return 0;
 }
 
@@ -163,6 +163,7 @@ static void clean_listspace()
 void shutdown_flow(void)
 {
 	int i;
+	uint8_t tmp_cnt;
 	capture_stop(nacfd);
 	shutdownInProgress = 1;
 	printf("Waiting for thread to stop...\n");
@@ -170,16 +171,17 @@ void shutdown_flow(void)
 	while (!report_stop) { sleep(1); }
 
 	printf("Report thread stopped.\n");
-#ifndef CONFIG_TX
 
-	for (i = 0; i < NUM_STREAM; i++)
+	for (i = 0, tmp_cnt = 0; i < NUM_STREAM; i++)
 	{
-		while (!an_stop[i]) { sleep(1); }
+		while (!an_stop[i])
+		{
+			sleep(1);
+			printf("wait rx_teriminal 20Sec cur:%dSec\n", tmp_cnt++);
+		}
 
 		printf("Analyze thread for stream %d stopped.\n", i);
 	}
-
-#endif
 
 	for (i = 0; i < NUM_STREAM; i++)
 	{
@@ -214,21 +216,15 @@ void shutdown_flow(void)
 	return;
 }
 
-/**********************************************************/
 void brokenPipe(int signo)
 {
 	signal(SIGPIPE, brokenPipe);
 }
 
-/**********************************************************/
 void cleanup(int signo)
 {
 	shutdown_flow();
 }
-
-/**********************************************************/
-
-/**********************************************************/
 
 
 void print_buf(unsigned char *s, unsigned int len)
@@ -286,7 +282,7 @@ FIND:
 			verify_seqnum = 1;
 			memcpy(file->name, list[loop].pos + 16, 16);
 			memcpy(file->md5, list[loop].pos + 32, 16);
-			DEBUG_INFO(("[%s]:file.name:%s\n",__func__, file->name));
+			DEBUG_INFO(("[%s]:file.name:%s\n", __func__, file->name));
 			sprintf(tmp_filename, "/dev/shm/%s", file->name);
 
 			if ((file->fp = fopen(tmp_filename, "wb")) == NULL)
@@ -294,6 +290,7 @@ FIND:
 				printf("fail to open file %s\n", tmp_filename);
 				exit(-2);
 			}
+
 #ifdef WRITEFILE
 			fwrite(list[loop].pos + 48, 1600 - 48, 1, file->fp);
 #endif
@@ -312,7 +309,7 @@ FIND:
 			MD5_Update(&c, list[loop].pos + 48, tmp_wlen - 32);
 #endif
 			list[loop].seqnum = 0;
-			DEBUG_INFO(("{%s]:seqnum:%d file get the last packet \n", __func__,verify_seqnum));
+			DEBUG_INFO(("{%s]:seqnum:%d file get the last packet \n", __func__, verify_seqnum));
 			fclose(file->fp);
 #ifdef MD5_CAL
 			MD5_Final(md5_result, &c);
@@ -320,11 +317,11 @@ FIND:
 			compare_md5(file->md5, md5_result);
 #endif
 			verify_seqnum = 1;
-      rx_right_cnt ++;
+			rx_right_cnt ++;
 		}
 		else
 		{
-			DEBUG_INFO (("[%s]:write seqnum:%d into file\n", __func__, verify_seqnum));
+			DEBUG_INFO(("[%s]:write seqnum:%d into file\n", __func__, verify_seqnum));
 #ifdef WRITEFILE
 			fwrite(list[loop].pos + 48, tmp_wlen - 32, 1, file->fp);
 #endif
@@ -395,6 +392,8 @@ static void *run_rx(an_arg_t *arg)
 		return(NULL);
 	}
 
+	clear_card_buf(nacfd, stream_num);
+
 	// start capturing data
 	if (nac_start_stream(nacfd, stream_num) < 0)
 	{
@@ -406,9 +405,10 @@ static void *run_rx(an_arg_t *arg)
 	uint32_t seqnum;
 	uint8_t tmp_filename[24];
 	init_listspace();
+	time_t timer;
+	timer = time(NULL);
 
-	// get data
-	while (!shutdownInProgress)
+	while (time(NULL) - timer < 20)
 	{
 		if ((top = nac_advance_stream(nacfd, stream_num, &bottom)) == NULL)
 		{
@@ -427,6 +427,9 @@ static void *run_rx(an_arg_t *arg)
 			if ((top - bottom) < rlen)
 				{ break; }
 
+			//	printf ("run_rx:get a packets seqnum:%d\n",seqnum);
+			timer = time(NULL);
+
 			if (seqnum == verify_seq)
 			{
 				if (1 == seqnum)	/*first packet of file*/
@@ -444,6 +447,7 @@ static void *run_rx(an_arg_t *arg)
 						printf("fail to open file %s\n", tmp_filename);
 						exit(-2);
 					}
+
 #ifdef WRITEFILE
 					fwrite(bottom + 48, wlen - 32, 1, file.fp);
 #endif
@@ -467,7 +471,7 @@ static void *run_rx(an_arg_t *arg)
 					compare_md5(file.md5, md5_result);
 #endif
 					verify_seq = 1;
-          rx_right_cnt ++;
+					rx_right_cnt ++;
 				}
 				else
 				{
@@ -502,7 +506,7 @@ static void *run_rx(an_arg_t *arg)
 				else
 				{
 					list[loop].seqnum = seqnum;
-					DEBUG_INFO (("run_rx:bad seqnum:%d ,verify_num:%d\n",seqnum, verify_seq));
+					DEBUG_INFO(("run_rx:bad seqnum:%d ,verify_num:%d\n", seqnum, verify_seq));
 					memcpy(list[loop].pos , bottom , 1600);
 				}
 			}
@@ -512,19 +516,19 @@ NEXT:
 		}
 	}
 
+	printf("time(NULL)- timer:%llu\n", time(NULL) - timer);
 PEND:
 	an_stop[stream_num] = 1;
-
-  pro_end = time(NULL);
-  /****************************************************************************/
-  printf ("*****************************************************************\n");
-  printf ("*\tTranslate file.name:%s\n", file.name);
-  printf ("*\tTranslate Use_Time:%llu Min\n", (pro_end - pro_start) / 60);
-  printf ("*\trx_file OK count:%llu\n", rx_right_cnt);
-  printf ("*\trx_file ERROR count:%llu\n", rx_err_cnt);
-  printf ("*\tTranslate aver-BandWith:%f Mbps\n",(double)( 8 *totalBytes[0] / 1000000)/(double)(pro_end - pro_start));
-  printf ("*\tTranslate totalBytes:%llu totalPackets:%llu\n", totalBytes[0], totalPackets[0]);
-  printf ("*****************************************************************\n");
+	pro_end = time(NULL);
+	/****************************************************************************/
+	printf("*****************************************************************\n");
+	printf("*\tTranslate file.name:%s\n", file.name);
+	printf("*\tTranslate Use_Time:%llu Min\n", (pro_end - pro_start) / 60);
+	printf("*\trx_file OK count:%llu\n", rx_right_cnt);
+	printf("*\trx_file ERROR count:%llu\n", rx_err_cnt);
+	printf("*\tTranslate aver-BandWith:%f Mbps\n", (double)(8 * totalBytes[0] / 1000000) / (double)(pro_end - pro_start));
+	printf("*\tTranslate totalBytes:%llu totalPackets:%llu\n", totalBytes[0], totalPackets[0]);
+	printf("*****************************************************************\n");
 
 	if (file.size != totalBytes[0])
 	{
@@ -544,7 +548,7 @@ static void *run_tx(an_arg_t *arg)
 	uint32_t fsize = 0;
 	uint32_t seqnum ;
 	file_header_t file;
-	int stream_num			= arg->stream_num;
+	int stream_num			  = arg->stream_num;
 	unsigned int mindata	= arg->mindata;
 	struct timeval maxwait	= arg->maxwait;
 	struct timeval poll 	= arg->poll;
@@ -563,7 +567,7 @@ static void *run_tx(an_arg_t *arg)
 	file.fp = fopen(file.name, "rb");
 	printf("run_tx:file.fp open\n");
 
-	if (file.fp == NULL) { return(-3); }
+	if (file.fp == NULL) { return((void *) - 3); }
 
 	fseek(file.fp, 0, SEEK_END);
 	file.size = ftell(file.fp);
@@ -602,13 +606,43 @@ static void *run_tx(an_arg_t *arg)
 	file.tx_count = (file.size / file.chip) + 1;
 	printf("run_tx:file.size:%d file.chip:%d file.tx_count:%d\n", file.size, file.chip, file.tx_count);
 	uint8_t *buffer_packet;
-	buffer_packet = malloc(1600);
+	buffer_packet = malloc(1600 * file.tx_count);
 
 	if (NULL == buffer_packet)
 	{
 		perror("run_tx: malloc buffer_packet failed\n");
 		return NULL;
 	}
+
+	memset(buffer_packet, 0, 1600 * file.tx_count);
+	uint64_t offset ;
+
+	for (seqnum = 1; seqnum <= file.tx_count; seqnum++)
+	{
+		erf_record_t pkt_header;
+		pkt_header.ts[0] = htonl(file.size);
+		pkt_header.ts[1] = htonl(seqnum);
+		pkt_header.rlen = htons(1600);
+		offset = 1600 * (seqnum - 1);
+		memcpy(buffer_packet +  offset + 16, file.name, 16);
+		memcpy(buffer_packet + offset + 16 + 16, file.md5, sizeof(file.md5));
+
+		if (seqnum < file.tx_count)
+		{
+			pkt_header.wlen = htons(file.chip + 32);           //file.chip - erf_header(16byte)
+			memcpy(buffer_packet + offset , &pkt_header, 16);
+			memcpy(buffer_packet + offset + 48, send_buf + (seqnum - 1) * file.chip, file.chip);
+		}
+		else
+		{
+			pkt_header.wlen = htons(32 + file.size % file.chip);
+			memcpy(buffer_packet + offset, &pkt_header, 16);
+			memcpy(buffer_packet + offset + 48, send_buf + (seqnum - 1) * file.chip, file.size % file.chip);
+		}
+	}
+
+	free(send_buf);
+	send_buf = NULL;
 
 	/*transmit stream map buffers*/
 	if (nac_tx_attach_stream(nacfd, (stream_num + NUM_STREAM), COPY_FWD, 0) < 0)
@@ -631,74 +665,45 @@ static void *run_tx(an_arg_t *arg)
 		return(NULL);
 	}
 
-	/*************************/
+  uint64_t tmp_tx_cnt;
+  uint64_t tmp_offset;
 
+  tmp_tx_cnt = 1;
 	while (!shutdownInProgress)
 	{
-		printf("Trans times: %d\n", ++trans_time);
-		seqnum = 1;
-
-		while (1)
-		{
-			erf_record_t pkt_header;
-			pkt_header.ts[0] = htonl(file.size);
-			pkt_header.ts[1] = htonl(seqnum);
-			pkt_header.rlen = htons(1600);
-			memset(buffer_packet, 0, pkt_header.rlen);
-			memcpy(buffer_packet + 16, file.name, 16);
-			//print_buf(buffer_packet, 1600);
-#ifdef MD5_CAL
-			memcpy(buffer_packet + 16 + 16, file.md5, sizeof(file.md5));
+		//	printf("Trans times: %d\n", ++trans_time);
+#ifdef BIGFILE
+    cp_org = nac_tx_get_stream_space(nacfd, (stream_num + NUM_STREAM),  1600);
+#else
+    cp_org = nac_tx_get_stream_space(nacfd, (stream_num + NUM_STREAM),  1600 * file.tx_count);
 #endif
-			//print_buf(buffer_packet, 1600);
-
-			if (seqnum < file.tx_count)
-			{
-				pkt_header.wlen = htons(file.chip + 32);           //file.chip - erf_header(16byte)
-				memcpy(buffer_packet, &pkt_header, 16);
-				memcpy(buffer_packet + 48, send_buf + (seqnum - 1) * file.chip, file.chip);
-			}
-			else
-			{
-				pkt_header.wlen = htons(32 + file.size % file.chip);
-				memcpy(buffer_packet, &pkt_header, 16);
-				memcpy(buffer_packet + 48, send_buf + (seqnum - 1) * file.chip, file.size % file.chip);
-			}
-
-			//		printf ("run_tx:seqnum:%d,wlen:%d\n",seqnum,ntohs(pkt_header.wlen) );
-			//			print_buf(buffer_packet, 1600);
-			cp_org = nac_tx_get_stream_space(nacfd, (stream_num + NUM_STREAM), 1600);
-
-			if (NULL == cp_org)
-			{
-				perror("nac_tx_get_stream_space,return");
-				return NULL;
-			}
-
-			memcpy(cp_org, buffer_packet, 1600);
-			tx_times++;
-			ret = nac_tx_stream_commit_bytes(nacfd, (stream_num + NUM_STREAM), 1600);
-
-			if (NULL == ret)
-			{
-				perror("nac_tx_stream_commit_bytes,return");
-				return NULL;
-			}
-
-			if (seqnum >= file.tx_count)
-			{
-				printf("file.name:%s send over...\n", file.name);
-				seqnum = 0;
-				break;
-			}
-
-			seqnum++;
+		if (NULL == cp_org)
+		{
+			perror("nac_tx_get_stream_space,return");
+			return NULL;
 		}
-
-		sleep(5);
+#ifdef BIGFILE
+    tmp_offset = 1600 * (tmp_tx_cnt - 1);
+		memcpy(cp_org, buffer_packet + tmp_offset, 1600);
+		ret = nac_tx_stream_commit_bytes(nacfd, (stream_num + NUM_STREAM), 1600);
+#else
+		memcpy(cp_org, buffer_packet , 1600 * file.tx_count);
+		ret = nac_tx_stream_commit_bytes(nacfd, (stream_num + NUM_STREAM), 1600 * file.tx_count);
+#endif    
+		if (NULL == ret)
+		{
+			perror("nac_tx_stream_commit_bytes,return");
+			return NULL;
+		}
+#ifdef BIGFILE
+    if (tmp_tx_cnt >= file.tx_count)
+      tmp_tx_cnt = 0;
+    tmp_tx_cnt++;
+#endif
 	}
 
 TX_END:
+//  free(buffer_packet);
 
 	if (stream_num == 0)
 	{
@@ -730,6 +735,7 @@ void *anReport(void *unUsed)
 	memset(&port2_cnt, 0, sizeof(statistics_cnt_t));
 	memset(&port3_cnt, 0, sizeof(statistics_cnt_t));
 	gettimeofday(&start, NULL);
+	uint8_t log_name[64];
 	t = time(NULL);
 	strftime(log_name, sizeof(log_name), "%F:%T", localtime(&t));
 	strcat(log_name, ".csv");
@@ -744,7 +750,6 @@ void *anReport(void *unUsed)
 
 	uint8_t tmp_buffer_log[128];
 	memset(tmp_buffer_log, 0x00, sizeof(tmp_buffer_log));
-	uint64_t count = 0;
 	printf("************************************************\n");
 
 	while (!shutdownInProgress)
@@ -761,8 +766,8 @@ void *anReport(void *unUsed)
 			printf("Stream %d: %f Mbps, %f Mpps, total: %d \n", i, (double)(8 * (totalBytes[i] - bytesCnt[i])) / (double)timeuse,
 			       (double)(totalPackets[i] - packetCnt[i]) / (double)timeuse, totalPackets[i] - packetCnt[i]);
 			memset(tmp_buffer_log, 0x00, sizeof(tmp_buffer_log));
-			sprintf(tmp_buffer_log, "[%s],%f Mbps, %f Mpps, totalBytes:%llu, totalPackets:%llu \n", tmp, (double)(8 * (totalBytes[i] - bytesCnt[i])) / (double)timeuse,
-			        (double)(totalPackets[i] - packetCnt[i]) / (double)timeuse,  totalBytes[i], totalPackets[i]);
+			sprintf(tmp_buffer_log, "[%s],%f Mbps, %f Mpps, totalBytes:%llu, totalPackets:%llu rx_right_cnt:%llu rx_err_cnt:%llu\n", tmp, (double)(8 * (totalBytes[i] - bytesCnt[i])) / (double)timeuse,
+			        (double)(totalPackets[i] - packetCnt[i]) / (double)timeuse,  totalBytes[i], totalPackets[i], rx_right_cnt, rx_err_cnt);
 			fputs(tmp_buffer_log, log_file);
 		}
 
@@ -770,7 +775,6 @@ void *anReport(void *unUsed)
 		memcpy(bytesCnt, totalBytes, sizeof(uint64_t) * NUM_STREAM);
 		memcpy(packetCnt, totalPackets, sizeof(uint64_t) * NUM_STREAM);
 		printf("************************************************\n");
-		count++;
 	}
 
 	fclose(log_file);
@@ -830,8 +834,7 @@ int main(int argc, char *argv[])
 	// init counters
 	memset(totalBytes, 0, sizeof(uint64_t)*NUM_STREAM);
 	memset(totalPackets, 0, sizeof(uint64_t)*NUM_STREAM);
-
-  pro_start = time(NULL);
+	pro_start = time(NULL);
 
 	// Use API, open nac card
 	if ((nacfd = nac_open(nacname)) < 0)
@@ -863,23 +866,18 @@ int main(int argc, char *argv[])
 
 	for (i = 0; i < NUM_STREAM; i++)
 	{
-#ifndef CONFIG_TX
 		pthread_create(&anRxThread[i], NULL, (void *)run_rx, (void *)&anThreadArg[i]);
-#else
-		sleep(2);
+		printf("delay 20sec to wait run_tx process\n");
+		sleep(10);
 		pthread_create(&anTxThread[i], NULL, (void *)run_tx, (void *)&anThreadArg[i]);
-#endif
 	}
 
 	capture_start(nacfd);
 
 	for (i = 0; i < NUM_STREAM; i++)
 	{
-#ifndef CONFIG_TX
 		pthread_join(anRxThread[i], NULL);
-#else
 		pthread_join(anTxThread[i], NULL);
-#endif
 	}
 
 	pthread_join(reportThread, NULL);
